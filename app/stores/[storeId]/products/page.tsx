@@ -1,6 +1,8 @@
+/* eslint-disable react-hooks/set-state-in-effect */
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useParams } from "next/navigation";
 import { ProductService } from "@/services/product.service";
 import { toast } from "sonner";
 
@@ -47,6 +49,10 @@ type ApiError = {
 };
 
 export default function ProductsPage() {
+  const params = useParams();
+  const storeId =
+    (params?.storeId as string) || "f0000000-0000-4000-8000-000000000001";
+
   const [products, setProducts] = useState<ProductResponse[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -70,20 +76,21 @@ export default function ProductsPage() {
     description: "",
     base_price: 0,
     status: "active" as ProductStatus,
-    store_id: "f0000000-0000-4000-8000-000000000001",
+    store_id: storeId,
     category_id: "e0000000-0000-4000-8000-000000000001",
   });
 
   const fetchProducts = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params: GetProductsFilterRequest = {
+      const fetchParams: GetProductsFilterRequest = {
         keyword: search || undefined,
         status: statusFilter === "ALL" ? undefined : statusFilter,
         sortBy,
         sortDir,
+        storeId: storeId,
       };
-      const response = await ProductService.getProducts(params);
+      const response = await ProductService.getProducts(fetchParams);
       const productList = Array.isArray(response) ? response : response.data;
       setProducts(productList || []);
     } catch (error) {
@@ -95,10 +102,9 @@ export default function ProductsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [search, statusFilter, sortBy, sortDir]);
+  }, [search, statusFilter, sortBy, sortDir, storeId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchProducts();
   }, [fetchProducts]);
 
@@ -108,7 +114,7 @@ export default function ProductsPage() {
       description: "",
       base_price: 0,
       status: "active",
-      store_id: "f0000000-0000-4000-8000-000000000001",
+      store_id: storeId,
       category_id: "e0000000-0000-4000-8000-000000000001",
     });
     setIsAddOpen(true);
@@ -139,7 +145,7 @@ export default function ProductsPage() {
       description: descriptionData,
       base_price: product.base_price,
       status: product.status,
-      store_id: "f0000000-0000-4000-8000-000000000001",
+      store_id: storeId,
       category_id: "e0000000-0000-4000-8000-000000000001",
     });
     setIsEditOpen(true);
@@ -201,7 +207,9 @@ export default function ProductsPage() {
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
       <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold tracking-tight">Sản Phẩm Của Shop</h1>
+        <h1 className="text-black text-3xl font-bold tracking-tight">
+          Danh sách sản phẩm
+        </h1>
         <Button onClick={handleOpenAdd}>+ Thêm Sản Phẩm Mới</Button>
       </div>
 
@@ -278,6 +286,7 @@ export default function ProductsPage() {
               <TableHead className="text-black font-bold">Danh mục</TableHead>
               <TableHead className="text-black font-bold">Giá bán</TableHead>
               <TableHead className="text-black font-bold">Trạng thái</TableHead>
+              <TableHead className="text-right"></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -308,7 +317,7 @@ export default function ProductsPage() {
                   <TableCell className="text-gray-500">
                     {p.category_name}
                   </TableCell>
-                  <TableCell className="text-red-600 font-semibold">
+                  <TableCell className="text-black font-semibold">
                     {Number(p.base_price).toLocaleString()} đ
                   </TableCell>
                   <TableCell>
@@ -328,11 +337,12 @@ export default function ProductsPage() {
                           : "Hết hàng"}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right space-x-2">
+                  <TableCell className="text-right space-x-2 ">
                     <Button
                       variant="outline"
                       size="sm"
                       onClick={() => handleOpenEdit(p)}
+                      className="hover:text-black hover:bg-white"
                     >
                       Sửa
                     </Button>
