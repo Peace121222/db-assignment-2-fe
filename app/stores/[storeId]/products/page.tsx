@@ -34,23 +34,33 @@ import {
 import {
   ProductResponse,
   ProductStatus,
-  GetProductsFilterRequest,
   CreateProductRequest,
   UpdateProductRequest,
+  GetProductsFilterRequest,
+  ApiResponse,
 } from "@/services/types/product.type";
 
 type ApiError = {
   response?: {
     data?: {
-      message?: string;
+      message?: string | string[];
     };
   };
-  message?: string;
 };
+
+const CATEGORY_MAP: Record<string, string> = {
+  "e0000000-0000-4000-8000-000000000001": "Điện thoại & Phụ kiện",
+  "e0000000-0000-4000-8000-000000000002": "Máy tính Laptop",
+  "e0000000-0000-4000-8000-000000000003": "Thời trang nam",
+  "e0000000-0000-4000-8000-000000000004": "Đồ gia dụng",
+  "e0000000-0000-4000-8000-000000000005": "Sách & Văn phòng phẩm",
+};
+
+const DEFAULT_CATEGORY = "e0000000-0000-4000-8000-000000000001";
 
 export default function ProductsPage() {
   const params = useParams();
-  const storeId =
+  const storeIdParam =
     (params?.storeId as string) || "f0000000-0000-4000-8000-000000000001";
 
   const [products, setProducts] = useState<ProductResponse[]>([]);
@@ -74,10 +84,10 @@ export default function ProductsPage() {
   const [formData, setFormData] = useState({
     name: "",
     description: "",
-    base_price: 0,
+    basePrice: 0,
     status: "active" as ProductStatus,
-    store_id: storeId,
-    category_id: "e0000000-0000-4000-8000-000000000001",
+    storeId: storeIdParam,
+    categoryId: DEFAULT_CATEGORY,
   });
 
   const fetchProducts = useCallback(async () => {
@@ -87,22 +97,23 @@ export default function ProductsPage() {
         keyword: search || undefined,
         status: statusFilter === "ALL" ? undefined : statusFilter,
         sortBy,
-        sortDir,
-        storeId: storeId,
+        sortOrder: sortDir,
+        storeId: storeIdParam,
       };
+
       const response = await ProductService.getProducts(fetchParams);
-      const productList = Array.isArray(response) ? response : response.data;
+      const productList =
+        (response as unknown as ProductResponse[])?.length !== undefined
+          ? (response as unknown as ProductResponse[])
+          : (response as ApiResponse<ProductResponse[]>).data;
+
       setProducts(productList || []);
-    } catch (error) {
-      const err = error as ApiError;
-      toast.error(
-        err.response?.data?.message || "Lỗi khi tải danh sách sản phẩm.",
-      );
-      console.error(err);
+    } catch {
+      toast.error("Lỗi khi tải danh sách sản phẩm.");
     } finally {
       setIsLoading(false);
     }
-  }, [search, statusFilter, sortBy, sortDir, storeId]);
+  }, [search, statusFilter, sortBy, sortDir, storeIdParam]);
 
   useEffect(() => {
     fetchProducts();
@@ -112,43 +123,37 @@ export default function ProductsPage() {
     setFormData({
       name: "",
       description: "",
-      base_price: 0,
+      basePrice: 0,
       status: "active",
-      store_id: storeId,
-      category_id: "e0000000-0000-4000-8000-000000000001",
+      storeId: storeIdParam,
+      categoryId: DEFAULT_CATEGORY,
     });
     setIsAddOpen(true);
   };
 
-  const handleOpenEdit = async (product: ProductResponse) => {
+  const handleOpenEdit = (product: ProductResponse) => {
     setSelectedProduct(product);
-
-    let descriptionData = "";
-    try {
-      const detailResponse = await ProductService.getProductById(
-        product.product_id,
-      );
-      const detailData = Array.isArray(detailResponse)
-        ? detailResponse[0]
-        : detailResponse.data;
-
-      const dataRecord = detailData as Record<string, unknown>;
-      if (dataRecord && typeof dataRecord.description === "string") {
-        descriptionData = dataRecord.description;
-      }
-    } catch {
-      console.log("Lấy chi tiết thất bại, dùng giá trị mặc định");
-    }
-
     setFormData({
       name: product.product_name,
-      description: descriptionData,
-      base_price: product.base_price,
+      description: product.description || "",
+      basePrice: Number(product.base_price),
       status: product.status,
-      store_id: storeId,
-      category_id: "e0000000-0000-4000-8000-000000000001",
+      storeId: product.store_id || storeIdParam,
+      categoryId: product.category_id || DEFAULT_CATEGORY,
     });
     setIsEditOpen(true);
+  };
+
+  const displayError = (err: unknown, fallbackMsg: string) => {
+    const apiError = err as ApiError;
+    const msg = apiError.response?.data?.message;
+    if (Array.isArray(msg)) {
+      toast.error(msg[0]);
+    } else if (typeof msg === "string") {
+      toast.error(msg);
+    } else {
+      toast.error(fallbackMsg);
+    }
   };
 
   const handleSaveAdd = async () => {
@@ -156,17 +161,16 @@ export default function ProductsPage() {
       const payload: CreateProductRequest = {
         name: formData.name,
         description: formData.description,
-        base_price: formData.base_price,
-        store_id: formData.store_id,
-        category_id: formData.category_id,
+        basePrice: formData.basePrice,
+        storeId: formData.storeId,
+        categoryId: formData.categoryId,
       };
       await ProductService.createProduct(payload);
       toast.success("Thêm sản phẩm thành công!");
       setIsAddOpen(false);
       fetchProducts();
     } catch (error) {
-      const err = error as ApiError;
-      toast.error(err.response?.data?.message || "Lỗi khi thêm sản phẩm.");
+      displayError(error, "Lỗi khi thêm sản phẩm.");
     }
   };
 
@@ -176,18 +180,17 @@ export default function ProductsPage() {
       const payload: UpdateProductRequest = {
         name: formData.name,
         description: formData.description,
-        base_price: formData.base_price,
+        basePrice: formData.basePrice,
         status: formData.status,
-        store_id: formData.store_id,
-        category_id: formData.category_id,
+        storeId: formData.storeId,
+        categoryId: formData.categoryId,
       };
       await ProductService.updateProduct(selectedProduct.product_id, payload);
-      toast.success("Cập nhật sản phẩm thành công!");
+      toast.success("Cập nhật thành công!");
       setIsEditOpen(false);
       fetchProducts();
     } catch (error) {
-      const err = error as ApiError;
-      toast.error(err.response?.data?.message || "Lỗi khi cập nhật.");
+      displayError(error, "Lỗi khi cập nhật.");
     }
   };
 
@@ -199,8 +202,7 @@ export default function ProductsPage() {
       setIsDeleteOpen(false);
       fetchProducts();
     } catch (error) {
-      const err = error as ApiError;
-      toast.error(err.response?.data?.message || "Lỗi khi xóa.");
+      displayError(error, "Lỗi khi xóa.");
     }
   };
 
@@ -210,7 +212,12 @@ export default function ProductsPage() {
         <h1 className="text-black text-3xl font-bold tracking-tight">
           Danh sách sản phẩm
         </h1>
-        <Button onClick={handleOpenAdd}>+ Thêm Sản Phẩm Mới</Button>
+        <Button
+          onClick={handleOpenAdd}
+          className="bg-blue-600 text-white hover:bg-blue-700 border-0 cursor-pointer"
+        >
+          + Thêm Sản Phẩm Mới
+        </Button>
       </div>
 
       <div className="flex flex-col md:flex-row gap-4 justify-between items-center bg-white p-4 rounded-lg border shadow-sm">
@@ -220,18 +227,16 @@ export default function ProductsPage() {
             placeholder="Tìm kiếm theo tên..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            className="text-black"
           />
         </div>
 
         <div className="flex w-full md:w-auto gap-2">
           <Select
             value={statusFilter}
-            onValueChange={(value) => {
-              if (value !== null)
-                setStatusFilter(value as ProductStatus | "ALL");
-            }}
+            onValueChange={(v) => setStatusFilter(v as ProductStatus | "ALL")}
           >
-            <SelectTrigger className="w-37.5">
+            <SelectTrigger className="w-37.5 text-black cursor-pointer">
               <SelectValue placeholder="Trạng thái" />
             </SelectTrigger>
             <SelectContent>
@@ -244,12 +249,11 @@ export default function ProductsPage() {
 
           <Select
             value={sortBy}
-            onValueChange={(value) => {
-              if (value !== null)
-                setSortBy(value as "price" | "name" | "created_at");
-            }}
+            onValueChange={(v) =>
+              setSortBy(v as "price" | "name" | "created_at")
+            }
           >
-            <SelectTrigger className="w-37.5">
+            <SelectTrigger className="w-37.5 text-black cursor-pointer">
               <SelectValue placeholder="Sắp xếp theo" />
             </SelectTrigger>
             <SelectContent>
@@ -261,11 +265,9 @@ export default function ProductsPage() {
 
           <Select
             value={sortDir}
-            onValueChange={(value) => {
-              if (value !== null) setSortDir(value as "ASC" | "DESC");
-            }}
+            onValueChange={(v) => setSortDir(v as "ASC" | "DESC")}
           >
-            <SelectTrigger className="w-30">
+            <SelectTrigger className="w-30 text-black cursor-pointer">
               <SelectValue placeholder="Chiều" />
             </SelectTrigger>
             <SelectContent>
@@ -296,20 +298,20 @@ export default function ProductsPage() {
                   colSpan={5}
                   className="h-24 text-center text-gray-500"
                 >
-                  Đang tải dữ liệu...
+                  Đang tải...
                 </TableCell>
               </TableRow>
-            ) : (products || []).length === 0 ? (
+            ) : products.length === 0 ? (
               <TableRow>
                 <TableCell
                   colSpan={5}
                   className="h-24 text-center text-gray-500"
                 >
-                  Không tìm thấy sản phẩm nào phù hợp.
+                  Không có sản phẩm nào.
                 </TableCell>
               </TableRow>
             ) : (
-              (products || []).map((p) => (
+              products.map((p) => (
                 <TableRow key={p.product_id}>
                   <TableCell className="text-black font-medium">
                     {p.product_name}
@@ -322,13 +324,7 @@ export default function ProductsPage() {
                   </TableCell>
                   <TableCell>
                     <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        p.status === "active"
-                          ? "bg-green-100 text-green-700"
-                          : p.status === "hidden"
-                            ? "bg-gray-100 text-gray-700"
-                            : "bg-red-100 text-red-700"
-                      }`}
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${p.status === "active" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
                     >
                       {p.status === "active"
                         ? "Đang bán"
@@ -337,18 +333,18 @@ export default function ProductsPage() {
                           : "Hết hàng"}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right space-x-2 ">
+                  <TableCell className="text-right space-x-2">
                     <Button
-                      variant="outline"
                       size="sm"
                       onClick={() => handleOpenEdit(p)}
-                      className="hover:text-black hover:bg-white"
+                      className="bg-black text-white hover:bg-gray-800 cursor-pointer border-0"
                     >
                       Sửa
                     </Button>
                     <Button
                       variant="destructive"
                       size="sm"
+                      className="cursor-pointer"
                       onClick={() => {
                         setSelectedProduct(p);
                         setIsDeleteOpen(true);
@@ -369,7 +365,7 @@ export default function ProductsPage() {
           <DialogHeader>
             <DialogTitle>Thêm Sản Phẩm Mới</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-4 text-black">
             <div className="grid gap-2">
               <label className="text-sm font-medium">Tên sản phẩm</label>
               <Input
@@ -377,45 +373,38 @@ export default function ProductsPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, name: e.target.value })
                 }
+                className="text-black"
               />
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium">Danh mục</label>
               <Select
-                value={formData.category_id}
-                onValueChange={(value) => {
-                  if (value !== null) {
-                    setFormData({ ...formData, category_id: value });
-                  }
-                }}
+                value={formData.categoryId}
+                onValueChange={(v) =>
+                  setFormData({
+                    ...formData,
+                    categoryId: v || DEFAULT_CATEGORY,
+                  })
+                }
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn danh mục" />
+                <SelectTrigger className="text-black cursor-pointer">
+                  <SelectValue placeholder="Chọn danh mục">
+                    {CATEGORY_MAP[formData.categoryId]}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="e0000000-0000-4000-8000-000000000001">
-                    Điện thoại & Phụ kiện
-                  </SelectItem>
-                  <SelectItem value="e0000000-0000-4000-8000-000000000002">
-                    Thời trang nam
-                  </SelectItem>
-                  <SelectItem value="e0000000-0000-4000-8000-000000000003">
-                    Sách & Văn phòng phẩm
-                  </SelectItem>
-                  <SelectItem value="e0000000-0000-4000-8000-000000000004">
-                    Đồ gia dụng
-                  </SelectItem>
-                  <SelectItem value="e0000000-0000-4000-8000-000000000005">
-                    Thể thao & Dã ngoại
-                  </SelectItem>
+                  {Object.entries(CATEGORY_MAP).map(([id, name]) => (
+                    <SelectItem key={id} value={id}>
+                      {name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <label className="text-sm font-medium">Mô tả sản phẩm</label>
+              <label className="text-sm font-medium">Mô tả</label>
               <Textarea
-                placeholder="Nhập thông tin mô tả chi tiết..."
-                className="min-h-25"
+                className="min-h-25 text-black"
                 value={formData.description}
                 onChange={(e) =>
                   setFormData({ ...formData, description: e.target.value })
@@ -423,24 +412,33 @@ export default function ProductsPage() {
               />
             </div>
             <div className="grid gap-2">
-              <label className="text-sm font-medium">Giá bán (VNĐ)</label>
+              <label className="text-sm font-medium">Giá bán</label>
               <Input
                 type="number"
-                value={formData.base_price}
+                value={formData.basePrice}
                 onChange={(e) =>
                   setFormData({
                     ...formData,
-                    base_price: Number(e.target.value),
+                    basePrice: Number(e.target.value),
                   })
                 }
+                className="text-black"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsAddOpen(false)}>
+            <Button
+              className="bg-red-600 text-white cursor-pointer"
+              onClick={() => setIsAddOpen(false)}
+            >
               Hủy
             </Button>
-            <Button onClick={handleSaveAdd}>Lưu sản phẩm</Button>
+            <Button
+              className="bg-blue-600 text-white cursor-pointer"
+              onClick={handleSaveAdd}
+            >
+              Lưu sản phẩm
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -450,7 +448,7 @@ export default function ProductsPage() {
           <DialogHeader>
             <DialogTitle>Chỉnh Sửa Sản Phẩm</DialogTitle>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
+          <div className="grid gap-4 py-4 text-black">
             <div className="grid gap-2">
               <label className="text-sm font-medium">Tên sản phẩm</label>
               <Input
@@ -458,45 +456,38 @@ export default function ProductsPage() {
                 onChange={(e) =>
                   setFormData({ ...formData, name: e.target.value })
                 }
+                className="text-black"
               />
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium">Danh mục</label>
               <Select
-                value={formData.category_id}
-                onValueChange={(value) => {
-                  if (value !== null) {
-                    setFormData({ ...formData, category_id: value });
-                  }
-                }}
+                value={formData.categoryId}
+                onValueChange={(v) =>
+                  setFormData({
+                    ...formData,
+                    categoryId: v || DEFAULT_CATEGORY,
+                  })
+                }
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn danh mục" />
+                <SelectTrigger className="text-black cursor-pointer">
+                  <SelectValue placeholder="Chọn danh mục">
+                    {CATEGORY_MAP[formData.categoryId]}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="e0000000-0000-4000-8000-000000000001">
-                    Điện thoại & Phụ kiện
-                  </SelectItem>
-                  <SelectItem value="e0000000-0000-4000-8000-000000000002">
-                    Thời trang nam
-                  </SelectItem>
-                  <SelectItem value="e0000000-0000-4000-8000-000000000003">
-                    Sách & Văn phòng phẩm
-                  </SelectItem>
-                  <SelectItem value="e0000000-0000-4000-8000-000000000004">
-                    Đồ gia dụng
-                  </SelectItem>
-                  <SelectItem value="e0000000-0000-4000-8000-000000000005">
-                    Thể thao & Dã ngoại
-                  </SelectItem>
+                  {Object.entries(CATEGORY_MAP).map(([id, name]) => (
+                    <SelectItem key={id} value={id}>
+                      {name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-2">
-              <label className="text-sm font-medium">Mô tả sản phẩm</label>
+              <label className="text-sm font-medium">Mô tả</label>
               <Textarea
-                placeholder="Nhập thông tin mô tả chi tiết..."
-                className="min-h-25"
+                className="min-h-25 text-black"
                 value={formData.description}
                 onChange={(e) =>
                   setFormData({ ...formData, description: e.target.value })
@@ -504,32 +495,28 @@ export default function ProductsPage() {
               />
             </div>
             <div className="grid gap-2">
-              <label className="text-sm font-medium">Giá bán (VNĐ)</label>
+              <label className="text-sm font-medium">Giá bán</label>
               <Input
                 type="number"
-                value={formData.base_price}
+                value={formData.basePrice}
                 onChange={(e) =>
                   setFormData({
                     ...formData,
-                    base_price: Number(e.target.value),
+                    basePrice: Number(e.target.value),
                   })
                 }
+                className="text-black"
               />
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium">Trạng thái</label>
               <Select
                 value={formData.status}
-                onValueChange={(value) => {
-                  if (value !== null) {
-                    setFormData({
-                      ...formData,
-                      status: value as ProductStatus,
-                    });
-                  }
-                }}
+                onValueChange={(v) =>
+                  setFormData({ ...formData, status: v as ProductStatus })
+                }
               >
-                <SelectTrigger>
+                <SelectTrigger className="text-black cursor-pointer">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -541,10 +528,18 @@ export default function ProductsPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsEditOpen(false)}>
+            <Button
+              className="bg-red-600 text-white cursor-pointer"
+              onClick={() => setIsEditOpen(false)}
+            >
               Hủy
             </Button>
-            <Button onClick={handleSaveEdit}>Cập nhật</Button>
+            <Button
+              className="bg-blue-600 text-white cursor-pointer"
+              onClick={handleSaveEdit}
+            >
+              Cập nhật
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -554,19 +549,24 @@ export default function ProductsPage() {
           <DialogHeader>
             <DialogTitle className="text-red-600">Xác nhận xóa</DialogTitle>
           </DialogHeader>
-          <div className="py-4">
-            Bạn có chắc chắn muốn xóa sản phẩm{" "}
+          <div className="py-4 text-black">
+            Bạn có chắc chắn muốn xóa{" "}
             <strong className="text-red-500">
               {selectedProduct?.product_name}
             </strong>
-            ?<br />
-            Hành động này sẽ ẩn sản phẩm khỏi cửa hàng.
+            ?
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteOpen(false)}>
+            <Button
+              className="bg-red-600 text-white cursor-pointer"
+              onClick={() => setIsDeleteOpen(false)}
+            >
               Hủy
             </Button>
-            <Button variant="destructive" onClick={handleDeleteConfirm}>
+            <Button
+              className="bg-blue-600 text-white cursor-pointer"
+              onClick={handleDeleteConfirm}
+            >
               Đồng ý Xóa
             </Button>
           </DialogFooter>
