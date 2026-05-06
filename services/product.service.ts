@@ -30,7 +30,7 @@ export const ProductService = {
     productId: string,
     data: UpdateProductRequest,
   ): Promise<ApiResponse<ProductResponse>> => {
-    return axiosClient.put(`/products/${productId}`, data);
+    return axiosClient.patch(`/products/${productId}`, data);
   },
 
   deleteProduct: async (productId: string): Promise<ApiResponse<null>> => {
